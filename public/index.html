@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visualizador de Sensores do Vagão</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 20px;
+      }
+      .controls {
+        margin-bottom: 20px;
+        padding: 20px;
+        background: #f0f2f5;
+        border-radius: 8px;
+      }
+      input,
+      button {
+        padding: 8px 12px;
+        font-size: 14px;
+      }
+      #chart-container {
+        width: 100%;
+        height: 600px;
+        border: 1px solid #ddd;
+      }
+      #sensor-buttons {
+        margin-top: 15px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .sensor-btn {
+        cursor: pointer;
+        background: #e1e4e8;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+      }
+      .sensor-btn.active {
+        background: #007bff;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Monitoramento do Vagão</h1>
+
+    <div class="controls">
+      <label for="filename">Nome do Arquivo no S3:</label>
+      <input
+        type="text"
+        id="filename"
+        placeholder="ex: sensors_e25d9c...csv"
+        style="width: 300px"
+      />
+      <button onclick="carregarDados()">Carregar Gráfico</button>
+
+      <div id="sensor-buttons"></div>
+    </div>
+
+    <div id="chart-container"></div>
+
+    <script>
+      const API_URL = "http://172.29.31.40:3000/api/csv";
+      let chartData = [];
+
+      async function carregarDados() {
+        const filename = document.getElementById("filename").value;
+        if (!filename) {
+          alert("Digite o nome do arquivo!");
+          return;
+        }
+
+        document.getElementById("chart-container").innerHTML =
+          "Carregando dados do S3...";
+        document.getElementById("sensor-buttons").innerHTML = "";
+
+        try {
+          const response = await fetch(`${API_URL}?file=${filename}`);
+          if (!response.ok) throw new Error("Erro ao buscar arquivo na API");
+          const csvText = await response.text();
+          const parsed = Papa.parse(csvText, {
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+          });
+          const data = parsed.data;
+          const headers = parsed.meta.fields; // Nomes das colunas (timestamp, sensor1, sensor2...)
+
+          if (data.length === 0) {
+            throw new Error("CSV vazio");
+          }
+          const timestamps = data.map((row) => new Date(row.timestamp));
+
+          const sensorIds = headers.filter((h) => h !== "timestamp");
+
+          chartData = sensorIds.map((sensorId) => ({
+            type: "scatter",
+            mode: "lines",
+            name: sensorId,
+            x: timestamps,
+            y: data.map((row) => row[sensorId]),
+            visible: false,
+          }));
+
+          if (chartData.length > 0) chartData[0].visible = true;
+
+          desenharGrafico();
+          criarBotoes(sensorIds);
+        } catch (error) {
+          document.getElementById(
+            "chart-container"
+          ).innerHTML = `<p style="color:red">Erro: ${error.message}</p>`;
+          console.error(error);
+        }
+      }
+
+      function desenharGrafico() {
+        const layout = {
+          title: "Dados dos Sensores (Série Temporal)",
+          xaxis: { title: "Horário da Leitura" },
+          yaxis: { title: "Valor do Sensor" },
+          hovermode: "x unified",
+        };
+        Plotly.newPlot("chart-container", chartData, layout, {
+          responsive: true,
+        });
+      }
+
+      function criarBotoes(sensorIds) {
+        const container = document.getElementById("sensor-buttons");
+
+        const btnAll = document.createElement("button");
+        btnAll.innerText = "Ver Todos";
+        btnAll.className = "sensor-btn";
+        btnAll.onclick = () => alternarVisibilidade("todos", btnAll);
+        container.appendChild(btnAll);
+
+        sensorIds.forEach((id, index) => {
+          const btn = document.createElement("button");
+          btn.innerText = id;
+          btn.className = "sensor-btn " + (index === 0 ? "active" : "");
+          btn.onclick = () => alternarVisibilidade(index, btn);
+          container.appendChild(btn);
+        });
+      }
+
+      function alternarVisibilidade(traceIndex, btnElement) {
+        document
+          .querySelectorAll(".sensor-btn")
+          .forEach((b) => b.classList.remove("active"));
+        btnElement.classList.add("active");
+        let update = { visible: [] };
+        if (traceIndex === "todos") {
+          update.visible = chartData.map(() => true);
+        } else {
+          update.visible = chartData.map((_, i) =>
+            i === traceIndex ? true : false
+          );
+        }
+        Plotly.restyle("chart-container", update);
+      }
+    </script>
+  </body>
+</html>

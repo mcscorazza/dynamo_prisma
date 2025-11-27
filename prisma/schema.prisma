@@ -1,0 +1,21 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model LocationBucket {
+  id        Int      @id @default(autoincrement())
+  batchId   String   @map("batch_id")
+  startTime DateTime @map("start_time")
+  endTime   DateTime @map("end_time")
+  count     Int
+  data      Json     
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([batchId, startTime])
+  @@map("location_buckets")
+}

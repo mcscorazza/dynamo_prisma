@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Painel Vagão Digital</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        height: 95vh;
+        margin: 0;
+      }
+      .controls {
+        padding: 15px;
+        background: #f0f2f5;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        flex-shrink: 0;
+      }
+      input,
+      button {
+        padding: 8px 12px;
+        font-size: 14px;
+      }
+
+      .dashboard-container {
+        display: flex;
+        flex: 1;
+        gap: 15px;
+        min-height: 0;
+      }
+      .panel {
+        flex: 1;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .panel-header {
+        background: #e9ecef;
+        padding: 10px;
+        font-weight: bold;
+        text-align: center;
+        flex-shrink: 0;
+      }
+      .plot-container {
+        flex: 1;
+        position: relative;
+      }
+
+      #sensor-buttons {
+        margin-top: 10px;
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+      .sensor-btn {
+        cursor: pointer;
+        background: #fff;
+        border: 1px solid #ccc;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .sensor-btn.active {
+        background: #007bff;
+        color: white;
+        border-color: #0056b3;
+      }
+      .cards-container {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 15px;
+        flex-wrap: wrap; /* Garante que não quebre em telas pequenas */
+      }
+
+      .card {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        flex: 1; /* Faz todos ocuparem o mesmo espaço */
+        min-width: 150px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        border: 1px solid #e0e0e0;
+      }
+
+      .card h3 {
+        font-size: 11px;
+        color: #666;
+        margin: 0 0 5px 0;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .card p {
+        font-size: 18px;
+        font-weight: bold;
+        color: #2c3e50;
+        margin: 0;
+      }
+
+      .card span.sensor-name {
+        font-size: 10px;
+        color: #007bff;
+        display: block;
+        margin-bottom: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <label for="filename">Arquivo S3:</label>
+      <input
+        type="text"
+        id="filename"
+        placeholder="cole o nome do arquivo.csv aqui"
+        value="sensors_2decd2dc-e720-4cb7-9d4c-73dbe81785fe_1764189082997.csv"
+        style="width: 500px"
+      />
+      <button onclick="carregarDados()">Carregar Dashboard</button>
+      <div id="sensor-buttons"></div>
+    </div>
+
+    <div id="summary-cards" class="cards-container" style="display: none">
+      <div class="card">
+        <h3>Início da Viagem</h3>
+        <p id="card-start">--:--</p>
+      </div>
+      <div class="card">
+        <h3>Fim da Viagem</h3>
+        <p id="card-end">--:--</p>
+      </div>
+
+      <div class="card">
+        <span id="label-sensor-1" class="sensor-name">SENSOR 1</span>
+        <h3>Mínimo</h3>
+        <p id="val-min-1">--</p>
+      </div>
+      <div class="card">
+        <span id="label-sensor-1-max" class="sensor-name">SENSOR 1</span>
+        <h3>Máximo</h3>
+        <p id="val-max-1">--</p>
+      </div>
+
+      <div class="card">
+        <span id="label-sensor-n" class="sensor-name">SENSOR N</span>
+        <h3>Mínimo</h3>
+        <p id="val-min-n">--</p>
+      </div>
+      <div class="card">
+        <span id="label-sensor-n-max" class="sensor-name">SENSOR N</span>
+        <h3>Máximo</h3>
+        <p id="val-max-n">--</p>
+      </div>
+    </div>
+
+    <div class="dashboard-container">
+      <div class="panel">
+        <div class="panel-header">Leituras dos Sensores</div>
+        <div id="chart-div" class="plot-container"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">Localização Geográfica</div>
+        <div id="map-div" class="plot-container"></div>
+      </div>
+    </div>
+
+    <script>
+      const API_URL = "http://172.29.31.40:3000/api/csv";
+      let globalData = [];
+
+      const chartDiv = document.getElementById("chart-div");
+      const mapDiv = document.getElementById("map-div");
+
+      async function carregarDados() {
+        const filename = document.getElementById("filename").value;
+        if (!filename) {
+          alert("Digite o nome do arquivo!");
+          return;
+        }
+
+        chartDiv.innerHTML = '<p style="padding:20px">Carregando dados...</p>';
+        mapDiv.innerHTML = '<p style="padding:20px">Carregando mapa...</p>';
+        document.getElementById("sensor-buttons").innerHTML = "";
+
+        try {
+          const response = await fetch(`${API_URL}?file=${filename}`);
+          if (!response.ok) throw new Error("Erro na API");
+          const csvText = await response.text();
+
+          const parsed = Papa.parse(csvText, {
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+          });
+          globalData = parsed.data;
+          const headers = parsed.meta.fields;
+
+          if (globalData.length === 0) throw new Error("CSV vazio");
+
+          const timestamps = globalData.map((row) => new Date(row.timestamp));
+          const lats = globalData.map((row) => row.lat || 0);
+          const lons = globalData.map((row) => row.lon || 0);
+          const sensorIds = headers.filter(
+            (h) => !["timestamp", "lat", "lon"].includes(h)
+          );
+
+          atualizarCards(timestamps, globalData, sensorIds);
+
+          const chartTraces = sensorIds.map((sensorId) => ({
+            type: "scatter",
+            mode: "lines",
+            name: sensorId,
+            x: timestamps,
+            y: globalData.map((row) => row[sensorId]),
+            visible: false,
+          }));
+          if (chartTraces.length > 0) chartTraces[0].visible = true;
+
+          const chartLayout = {
+            margin: { t: 30, b: 40, l: 50, r: 20 },
+            hovermode: "x unified",
+            xaxis: { title: "Horário" },
+            yaxis: { title: "Valor" },
+          };
+
+          chartDiv.innerHTML = "";
+          Plotly.newPlot(chartDiv, chartTraces, chartLayout, {
+            responsive: true,
+          });
+
+          criarBotoes(sensorIds);
+          const tracePath = {
+            type: "scattermapbox",
+            mode: "lines",
+            lon: lons,
+            lat: lats,
+            line: { width: 4, color: "#007bff" },
+            opacity: 0.8,
+            name: "Trajeto",
+            text: timestamps.map((ts) => ts.toLocaleTimeString()),
+            hoverinfo: "text",
+          };
+
+          // TRACE 1: O Cursor (Vermelho)
+          const traceCursor = {
+            type: "scattermapbox",
+            mode: "markers",
+            lon: [lons[0]],
+            lat: [lats[0]],
+            marker: { size: 14, color: "red" },
+            name: "Atual",
+            hoverinfo: "lon+lat",
+          };
+
+          const centerLat = lats.reduce((a, b) => a + b, 0) / lats.length;
+          const centerLon = lons.reduce((a, b) => a + b, 0) / lons.length;
+
+          const mapLayout = {
+            margin: { t: 0, b: 0, l: 0, r: 0 },
+            mapbox: {
+              style: "open-street-map",
+              center: { lat: centerLat, lon: centerLon },
+              zoom: 12,
+            },
+            showlegend: false,
+          };
+
+          mapDiv.innerHTML = "";
+          Plotly.newPlot(mapDiv, [tracePath, traceCursor], mapLayout, {
+            responsive: true,
+          });
+
+          // Inicia a lógica de interação bidirecional
+          iniciarSincronizacao(lats, lons);
+        } catch (error) {
+          console.error(error);
+          chartDiv.innerHTML = `<p style="color:red; padding:20px">Erro: ${error.message}</p>`;
+          mapDiv.innerHTML = "";
+        }
+      }
+
+      function iniciarSincronizacao(lats, lons) {
+        const moverCursorMapa = (index) => {
+          const newLat = lats[index];
+          const newLon = lons[index];
+          Plotly.restyle(mapDiv, { lat: [[newLat]], lon: [[newLon]] }, [1]);
+        };
+        chartDiv.on("plotly_hover", function (eventData) {
+          const pointIndex = eventData.points[0].pointIndex;
+          moverCursorMapa(pointIndex);
+        });
+
+        mapDiv.on("plotly_hover", function (eventData) {
+          const ponto = eventData.points[0];
+          if (ponto.curveNumber === 1) return;
+          const pointIndex = ponto.pointIndex;
+          const alvosParaHover = [];
+          chartDiv.data.forEach((trace, index) => {
+            if (trace.visible === true || trace.visible === undefined) {
+              alvosParaHover.push({
+                curveNumber: index,
+                pointNumber: pointIndex,
+              });
+            }
+          });
+          if (alvosParaHover.length > 0) {
+            Plotly.Fx.hover(chartDiv, alvosParaHover);
+          }
+          moverCursorMapa(pointIndex);
+        });
+      }
+
+      function criarBotoes(sensorIds) {
+        const container = document.getElementById("sensor-buttons");
+        container.innerHTML = "";
+        const btnClear = document.createElement("button");
+        btnClear.innerText = "Limpar Tudo";
+        btnClear.className = "sensor-btn";
+        btnClear.style.fontWeight = "bold";
+        btnClear.onclick = () => {
+          document
+            .querySelectorAll(".sensor-btn")
+            .forEach((b) => b.classList.remove("active"));
+          atualizarGrafico();
+        };
+        container.appendChild(btnClear);
+        sensorIds.forEach((id, index) => {
+          const btn = document.createElement("button");
+          btn.innerText = id;
+          const isActive = index === 0;
+          btn.className = "sensor-btn " + (isActive ? "active" : "");
+          btn.onclick = () => {
+            btn.classList.toggle("active");
+            atualizarGrafico();
+          };
+          container.appendChild(btn);
+        });
+      }
+
+      function atualizarGrafico() {
+        const botoes = Array.from(
+          document.querySelectorAll(".sensor-btn")
+        ).filter((b) => b.innerText !== "Limpar Tudo");
+        const visibilidades = botoes.map((btn) =>
+          btn.classList.contains("active")
+        );
+        Plotly.restyle(chartDiv, { visible: visibilidades });
+      }
+
+      function atualizarCards(timestamps, data, sensorIds) {
+        const container = document.getElementById("summary-cards");
+
+        if (!sensorIds || sensorIds.length === 0) {
+          container.style.display = "none";
+          return;
+        }
+        container.style.display = "flex";
+
+        if (timestamps.length > 0) {
+          const fmt = (d) => d.toLocaleString("pt-BR"); // Formato: DD/MM/AAAA HH:MM:SS
+          document.getElementById("card-start").innerText = fmt(timestamps[0]);
+          document.getElementById("card-end").innerText = fmt(
+            timestamps[timestamps.length - 1]
+          );
+        }
+
+        const getStats = (key) => {
+          let min = Infinity;
+          let max = -Infinity;
+          for (let i = 0; i < data.length; i++) {
+            const val = Number(data[i][key]);
+            if (!isNaN(val)) {
+              if (val < min) min = val;
+              if (val > max) max = val;
+            }
+          }
+          return { min, max };
+        };
+
+        const firstId = sensorIds[0];
+        const statsFirst = getStats(firstId);
+
+        document.getElementById("label-sensor-1").innerText = firstId;
+        document.getElementById("label-sensor-1-max").innerText = firstId;
+        document.getElementById("val-min-1").innerText =
+          statsFirst.min.toFixed(2);
+        document.getElementById("val-max-1").innerText =
+          statsFirst.max.toFixed(2);
+
+        if (sensorIds.length > 1) {
+          const lastId = sensorIds[sensorIds.length - 1];
+          const statsLast = getStats(lastId);
+
+          document.getElementById("label-sensor-n").innerText = lastId;
+          document.getElementById("label-sensor-n-max").innerText = lastId;
+          document.getElementById("val-min-n").innerText =
+            statsLast.min.toFixed(2);
+          document.getElementById("val-max-n").innerText =
+            statsLast.max.toFixed(2);
+        } else {
+          document.getElementById("label-sensor-n").innerText = "-";
+          document.getElementById("val-min-n").innerText = "-";
+          document.getElementById("val-max-n").innerText = "-";
+        }
+      }
+    </script>
+  </body>
+</html>
