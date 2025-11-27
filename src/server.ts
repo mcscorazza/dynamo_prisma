@@ -1,13 +1,24 @@
 import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
+import path from "path";
+import { fileURLToPath } from "url";
 import { S3Repository } from "./repositories/S3Repository.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const fastify = Fastify({ logger: true });
 const s3Repo = new S3Repository();
 
 await fastify.register(cors, {
   origin: true,
+});
+
+await fastify.register(fastifyStatic, {
+  root: path.join(process.cwd(), "public"),
+  prefix: "/",
 });
 
 fastify.get("/", async () => {
