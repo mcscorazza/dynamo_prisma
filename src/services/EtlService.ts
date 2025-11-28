@@ -97,10 +97,22 @@ export class EtlService {
       console.log("[Service] Nenhum dado de sensor encontrado para CSV.");
       return;
     }
-    console.log(`[Service] Total de linhas geradas: ${sortedRows.length}`);
+
+    const DOWNSAMPLE_FACTOR = 200;
+    console.log(`[Service] Aplicando downsample de ${DOWNSAMPLE_FACTOR}x...`);
+
+    const reducedRows = sortedRows.filter(
+      (_, index) => index % DOWNSAMPLE_FACTOR === 0
+    );
+
+    console.log(
+      `[Service] Linhas originais: ${sortedRows.length} -> Reduzidas: ${reducedRows.length}`
+    );
+
+    console.log(`[Service] Total de linhas geradas: ${reducedRows.length}`);
     if (sortedRows.length > 0) {
-      const firstRow = sortedRows[0];
-      const lastRow = sortedRows[sortedRows.length - 1];
+      const firstRow = reducedRows[0];
+      const lastRow = reducedRows[reducedRows.length - 1];
       if (firstRow && lastRow) {
         console.log(
           `[Service] Início: ${new Date(firstRow.timestamp).toISOString()}`
@@ -110,7 +122,8 @@ export class EtlService {
         );
       }
     }
-    const csv = Papa.unparse(sortedRows, {
+
+    const csv = Papa.unparse(reducedRows, {
       columns: ["timestamp", "lat", "lon", ...Array.from(allSensorIds)],
       header: true,
     });

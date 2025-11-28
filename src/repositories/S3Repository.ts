@@ -3,7 +3,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
-import { Readable } from "stream";
+import { gzipSync } from "zlib";
 
 export class S3Repository {
   private client: S3Client;
@@ -11,21 +11,25 @@ export class S3Repository {
 
   constructor() {
     this.client = new S3Client({
-      region: process.env.AWS_REGION || "us-east-1",
+      region: process.env.AWS_REGION || "sa-east-1",
     });
-    this.bucketName = process.env.S3_BUCKET_NAME || "seu-bucket-padrao";
+    this.bucketName = process.env.S3_BUCKET_NAME || "svx-csv";
   }
 
-  async uploadCsv(fileName: string, csvContent: string): Promise<void> {
+  async uploadCsv(fileName: string, content: string): Promise<void> {
+    const compressedBody = gzipSync(content);
     const command = new PutObjectCommand({
       Bucket: this.bucketName,
-      Key: `sensores/${fileName}`, // Salva numa pasta organizada
-      Body: csvContent,
+      Key: `sensores/${fileName}`,
+      Body: compressedBody,
       ContentType: "text/csv",
+      ContentEncoding: "gzip",
     });
 
     await this.client.send(command);
-    console.log(`[S3] Arquivo ${fileName} enviado com sucesso.`);
+    console.log(
+      `[S3] Arquivo ${fileName} enviado (GZIP: ${compressedBody.length} bytes).`
+    );
   }
 
   async getCsvContent(fileName: string): Promise<string> {

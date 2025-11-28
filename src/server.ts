@@ -21,10 +21,6 @@ await fastify.register(fastifyStatic, {
   prefix: "/",
 });
 
-fastify.get("/", async () => {
-  return { status: "API do Vagão Digital Online 🚀" };
-});
-
 fastify.get("/api/csv", async (request, reply) => {
   const { file } = request.query as { file: string };
   if (!file) {

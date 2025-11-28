@@ -14,7 +14,7 @@ async function main() {
     const s3Repo = new S3Repository();
     const etlService = new EtlService(dynamoRepo, pgRepo, s3Repo);
     const controller = new BatchController(etlService);
-    const batchIdParaProcessar = "2decd2dc-e720-4cb7-9d4c-73dbe81785fe";
+    const batchIdParaProcessar = "e25d9c5e-a796-4933-9b1a-33fb36fe7f41";
     await controller.handle(batchIdParaProcessar);
   } catch (err) {
     console.error("Erro fatal:", err);
